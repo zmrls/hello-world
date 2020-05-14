@@ -5,7 +5,7 @@ library(gifski)
 
 #Raw Data
 
-scores <- read_csv("gameScores.csv")
+scores <- read_csv("~/hello-world/PLL/data/gameScores2019.csv")
 scores
 
 #Team colors
