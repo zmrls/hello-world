@@ -1,37 +1,58 @@
 library(tidyverse)
+library(lubridate)
 library(gganimate)
 library(transformr)
 library(gifski)
 
 #Raw Data
 
-scores <- read_csv("~/hello-world/PLL/data/gameScores2019.csv")
-scores
+raw_data <- read_csv("PLL/data/gameScores2019.csv", 
+                     col_types = cols(`2` = col_date(format = "%m/%d/%Y"), 
+                                      `3` = col_integer()),
+                     na = '-')
 
 #Team colors
 
-teamColors <- tibble(opp = c("Archers", "Atlas", "Chaos", "Chrome", "Redwoods", "Whipsnakes"),
-                    col = c("#0c2f59", "#009aba", "#be2c49", "#e471a5", "#005840", "#55d2bd"))
+teamColors <- tibble(opp = c("Archers", "Atlas", "Chaos", "Chrome", 
+                             "Redwoods", "Whipsnakes"),
+                    col = c("#0c2f59", "#009aba", "#be2c49", "#e471a5", 
+                            "#005840", "#55d2bd"))
 
 
 color_map <- set_names(teamColors$col, teamColors$opp)
 
 #Column names are all messed up. Vector to rename them.
 
-cols = c("teamScore", "date", "week", "fieldName", "location")
+cols = c("result", "date", "week", "field_name", "location")
 
-scores <- rename(scores, "teamScore" = X1, "date" = `2`, "week" = `3`, "fieldName" = `4`, "location" = `5`)
+game_data <- rename_all(raw_data, ~cols)
 
 #Need to separate the "teamScore" col into teams and scores individually
 
-scores$teamScore <- gsub("[()]"," ", scores$teamScore)
-scores$teamScore <- gsub("  vs ", " ", scores$teamScore)
-scores$teamScore
+teamsandscores
 
-#Tidy the data
+team_game_data <- game_data %>% 
+  separate(result, into = c('team1', 'team1_score', NA, 'team2', 'team2_score', 
+                            NA), 
+           sep = '\\(|\\)|\\svs\\s', convert = T)
 
-tidyScores <- scores %>% separate(teamScore, c("team1", "score1", "team2", "score2"), sep = c(" ", " ", " "), convert = T)
-tidyScores
+tm <- "ATLAS"
+
+tm_data <- game_data %>% filter(str_detect(result, tm)) %>% 
+  mutate(!!paste0(str_to_lower(tm), '_score') := as.integer(str_extract(result, paste0('(?<=', tm, '\\()[:digit:]+(?=\\))'))),
+         opp = str_to_title(str_extract(result, paste0('\\b(?!', tm,'|vs)[:alpha:]+\\b'))),
+         opp_score = as.integer(str_extract(result, paste0('(?<=', str_to_upper(opp), '\\()[:digit:]+(?=\\))'))),
+         score_diff = !!paste0(str_to_lower(tm), '_score') - opp_score) %>%
+  select(paste0(str_to_lower(tm), '_score'), opp, opp_score, week, score_diff, location, field_name) %>% 
+  arrange(opp, week)
+
+tm_data2 <- game_data %>% filter(str_detect(result, tm)) %>% 
+  mutate(score = as.integer(str_extract(result, paste0('(?<=', tm, '\\()[:digit:]+(?=\\))'))),
+         opp = str_to_title(str_extract(result, paste0('\\b(?!', tm,'|vs)[:alpha:]+\\b'))),
+         opp_score = as.integer(str_extract(result, paste0('(?<=', str_to_upper(opp), '\\()[:digit:]+(?=\\))'))),
+         score_diff = score - opp_score) %>%
+  select(score, opp, opp_score, week, score_diff, location, field_name) %>% 
+  arrange(opp, week)
 
 #Team select
 
@@ -39,11 +60,11 @@ team <- "ATLAS"
 
 #ATLAS Tibble
      
-Atlas <- tidyScores %>% 
+teams_results <- team_game_data %>% 
   filter(team1 == team | team2 == team) %>% 
   mutate(opp = if_else(team1 == team, team2, team1), 
-         teamScore = if_else(team1 == team, score1, score2),
-         oppScore = if_else(team1 == team, score2, score1),
+         teamScore = if_else(team1 == team, team1_score, team2_score),
+         oppScore = if_else(team1 == team, team2_score, team1_score),
          teamW = if_else(teamScore > oppScore, "1", "0"),
          week = as.integer(week)) %>% 
   select(opp, oppScore, teamScore, teamW, week, location) %>% 
@@ -53,10 +74,10 @@ Atlas <- tidyScores %>%
 
 #ATLAS Plot
 
-ggplot(Atlas, aes(week, scoreDiff,  col = opp)) + 
+ggplot(tm_data2, aes(week, score_diff,  col = opp)) + 
   geom_point(size = 2) +
   scale_color_manual("Opponent", values = color_map) +
-  theme_linedraw() +
+  theme_light() +
   geom_hline(yintercept = 0, size = .25) +
   geom_line(linetype = "twodash") +
   annotate(geom = "text", x = 1, y = .25, label = "W", col = "darkgreen")  +
